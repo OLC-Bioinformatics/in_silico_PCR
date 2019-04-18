@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-from accessoryFunctions.accessoryFunctions import filer, GenObject, make_path, MetadataObject, SetupLogging
+from accessoryFunctions.accessoryFunctions import relative_symlink, filer, GenObject, make_path, MetadataObject, \
+    run_subprocess, SetupLogging
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio import SeqIO
 from Bio import Seq
 from argparse import ArgumentParser
 from itertools import product
 from threading import Thread
-from subprocess import call
 from csv import DictReader
 from queue import Queue
 import multiprocessing
@@ -14,7 +14,6 @@ from glob import glob
 import itertools
 import operator
 import logging
-import errno
 import time
 import os
 import sys
@@ -90,33 +89,26 @@ class PrimerFinder(object):
             # Make the destination folder
             make_path(sample[self.analysistype].outputdir)
             # Get the fastq files specific to the fastqname
-            specificfastq = glob(os.path.join(self.sequencepath, '{}*.fastq*'.format(fastqname)))
+            specificfastq = glob(os.path.join(self.sequencepath, '{fq}*.fastq*'.format(fq=fastqname)))
             # Set the file type for the downstream analysis
             sample[self.analysistype].filetype = 'fastq'
             # Link the files to the output folder
-            try:
-                # Link the .gz files to :self.path/:filename
-                list(map(lambda x: os.symlink('../{}'.format(os.path.basename(x)),
-                                              '{}/{}'.format(sample[self.analysistype].outputdir, os.path.basename(x))),
-                         specificfastq))  # Had to add list here due to some sort of 2to3 conversion issue.
-            # Except os errors
-            except OSError as exception:
-                # If there is an exception other than the file exists, raise it
-                if exception.errno != errno.EEXIST:
-                    raise
+            for fastq in specificfastq:
+                relative_symlink(src_file=fastq,
+                                 output_dir=sample[self.analysistype].outputdir)
             # Initialise the general and run categories
             sample.general = GenObject()
             # Populate the .fastqfiles category of :self.metadata
             sample.general.fastqfiles = [fastq for fastq in
-                                         glob(os.path.join(sample[self.analysistype].outputdir, '{}*.fastq*'
-                                                           .format(fastqname))) if 'trimmed' not in fastq]
+                                         glob(os.path.join(sample[self.analysistype].outputdir, '{fq}*.fastq*'
+                                                           .format(fq=fastqname))) if 'trimmed' not in fastq]
             # Populate certain attributes in order to be compatible with other local software
             sample.general.bestassemblyfile = sample.general.fastqfiles
             sample.general.trimmedcorrectedfastqfiles = sample.general.fastqfiles
             sample.general.outputdirectory = sample[self.analysistype].outputdir
             sample[self.analysistype].baitedfastq = os.path.join(
                 sample[self.analysistype].outputdir,
-                '{}_targetMatches.fastq.gz'.format(self.analysistype))
+                '{at}_targetMatches.fastq.gz'.format(at=self.analysistype))
             # Append the metadata to the list of samples
             self.metadata.append(sample)
         # Add any .fasta formatted files to the metadata object
@@ -130,16 +122,9 @@ class PrimerFinder(object):
             make_path(sample[self.analysistype].outputdir)
             # Set the file type for the downstream analysis
             sample[self.analysistype].filetype = 'fasta'
-            # Link the files to the output folder
-            try:
-                # Link the .fasta files to :self.path/:filename
-                os.symlink('../{}'.format(os.path.basename(fastafile)),
-                           '{}/{}'.format(sample[self.analysistype].outputdir, os.path.basename(fastafile)))
-            # Except os errors
-            except OSError as exception:
-                # If there is an exception other than the file exists, raise it
-                if exception.errno != errno.EEXIST:
-                    raise
+            # Link the .fasta files to :self.path/:filename
+            relative_symlink(src_file=fastafile,
+                             output_dir=sample[self.analysistype].outputdir)
             # Initialise the general and run categories
             sample.general = GenObject()
             # Populate the .fastqfiles category of :self.metadata
@@ -152,7 +137,7 @@ class PrimerFinder(object):
             sample.general.outputdirectory = sample[self.analysistype].outputdir
             sample[self.analysistype].baitedfastq = os.path.join(
                 sample[self.analysistype].outputdir,
-                '{}_targetMatches.fastq.gz'.format(self.analysistype))
+                '{at}_targetMatches.fastq.gz'.format(at=self.analysistype))
             sample[self.analysistype].assemblyfile = fastafile
             # Append the metadata to the list of samples
             self.metadata.append(sample)
@@ -169,7 +154,7 @@ class PrimerFinder(object):
             make_path(sample[self.analysistype].outputdir)
             sample[self.analysistype].baitedfastq = os.path.join(
                 sample[self.analysistype].outputdir,
-                '{}_targetMatches.fastq.gz'.format(self.analysistype))
+                '{at}_targetMatches.fastq.gz'.format(at=self.analysistype))
             # Set the file type for the downstream analysis
             sample[self.analysistype].filetype = self.filetype
             if self.filetype == 'fasta':
@@ -224,26 +209,28 @@ class PrimerFinder(object):
                         # in1, in2: paired inputs, hdist: number of mismatches, interleaved: force interleaved output
                         # outm: single, zipped output file of reads that match the target file
                         sample[self.analysistype].bbdukcmd = \
-                            'bbduk.sh ref={} k={} in1={} in2={} hdist={} threads={} interleaved=t outm={}' \
-                            .format(self.formattedprimers,
-                                    self.klength,
-                                    sample.general.trimmedcorrectedfastqfiles[0],
-                                    sample.general.trimmedcorrectedfastqfiles[1],
-                                    self.mismatches,
-                                    str(self.cpus),
-                                    sample[self.analysistype].baitedfastq)
+                            'bbduk.sh ref={primerfile} k={klength} in1={forward} in2={reverse} hdist={mismatches} ' \
+                            'threads={threads} interleaved=t outm={outfile}' \
+                            .format(primerfile=self.formattedprimers,
+                                    klength=self.klength,
+                                    forward=sample.general.trimmedcorrectedfastqfiles[0],
+                                    reverse=sample.general.trimmedcorrectedfastqfiles[1],
+                                    mismatches=self.mismatches,
+                                    threads=str(self.cpus),
+                                    outfile=sample[self.analysistype].baitedfastq)
                     else:
                         sample[self.analysistype].bbdukcmd = \
-                            'bbduk.sh ref={} k={} in={} hdist={} threads={} interleaved=t outm={}' \
-                            .format(self.formattedprimers,
-                                    self.klength,
-                                    sample.general.trimmedcorrectedfastqfiles[0],
-                                    self.mismatches,
-                                    str(self.cpus),
-                                    sample[self.analysistype].baitedfastq)
+                            'bbduk.sh ref={primerfile} k={klength} in={fastq} hdist={mismatches} threads={threads} ' \
+                            'interleaved=t outm={outfile}' \
+                            .format(primerfile=self.formattedprimers,
+                                    klength=self.klength,
+                                    fastq=sample.general.trimmedcorrectedfastqfiles[0],
+                                    mismatches=self.mismatches,
+                                    threads=str(self.cpus),
+                                    outfile=sample[self.analysistype].baitedfastq)
                     # Run the system call (if necessary)
                     if not os.path.isfile(sample[self.analysistype].baitedfastq):
-                        call(sample[self.analysistype].bbdukcmd, shell=True, stdout=self.devnull, stderr=self.devnull)
+                        run_subprocess(sample[self.analysistype].bbdukcmd)
 
     def doublebait(self):
         """
@@ -277,7 +264,7 @@ class PrimerFinder(object):
                                     sample[self.analysistype].doublebaitedfastq)
                     # Run the system call (if necessary)
                     if not os.path.isfile(sample[self.analysistype].doublebaitedfastq):
-                        call(sample[self.analysistype].bbdukcmd2, shell=True, stdout=self.devnull, stderr=self.devnull)
+                        run_subprocess(sample[self.analysistype].bbdukcmd2)
 
     def assemble_amplicon(self):
         """
@@ -321,7 +308,7 @@ class PrimerFinder(object):
             sample = self.queue.get()
             if not os.path.isfile(sample[self.analysistype].assemblyfile):
                 # Create and run the sequence call as required
-                call(sample[self.analysistype].spadescommand, shell=True, stdout=self.devnull, stderr=self.devnull)
+                run_subprocess(sample[self.analysistype].spadescommand)
                 if not os.path.isfile(sample[self.analysistype].assemblyfile):
                     sample[self.analysistype].assemblyfile = 'NA'
             self.queue.task_done()
@@ -337,7 +324,7 @@ class PrimerFinder(object):
             # Create the databases
             command = 'makeblastdb -in {} -parse_seqids -max_file_sz 2GB -dbtype nucl -out {}'\
                 .format(self.formattedprimers, db)
-            call(command, shell=True, stdout=self.devnull, stderr=self.devnull)
+            run_subprocess(command)
 
     def blastnthreads(self):
         """
@@ -762,8 +749,6 @@ class PrimerFinder(object):
             self.kmers = '99'
         self.queue = Queue()
         self.blastqueue = Queue()
-        # Set the location to send stdout and stderr from system calls
-        self.devnull = open(os.devnull, 'wb')
         # Fields used for custom outfmt 6 BLAST output:
         self.fieldnames = ['query_id', 'subject_id', 'positives', 'mismatches', 'gaps',
                            'evalue', 'bit_score', 'subject_length', 'alignment_length',
