@@ -5,6 +5,7 @@ from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio import SeqIO
 from Bio import Seq
 from argparse import ArgumentParser
+from click import progressbar
 from itertools import product
 from threading import Thread
 from csv import DictReader
@@ -48,7 +49,7 @@ class PrimerFinder(object):
         logging.info('Baiting .fastq files against previously baited .fastq files')
         self.doublebait()
         logging.info('Assembling contigs from double-baited .fastq files')
-        self.assemble_amplicon()
+        self.assemble_amplicon_spades()
         logging.info('Creating BLAST database')
         self.make_blastdb()
         logging.info('Running BLAST analyses')
@@ -129,9 +130,10 @@ class PrimerFinder(object):
             sample.general = GenObject()
             # Populate the .fastqfiles category of :self.metadata
             sample.general.fastqfiles = [fastq for fastq in glob(os.path.join(sample[self.analysistype].outputdir,
-                                                                              '{}*{}*'
-                                                                              .format(sample.name,
-                                                                                      os.path.splitext(fastafile)[1])))]
+                                                                              '{sn}*{ext}*'
+                                                                              .format(
+                                                                                  sn=sample.name,
+                                                                                  ext=os.path.splitext(fastafile)[1])))]
             sample.general.bestassemblyfile = sample.general.fastqfiles
             sample.general.trimmedcorrectedfastqfiles = sample.general.fastqfiles
             sample.general.outputdirectory = sample[self.analysistype].outputdir
@@ -173,7 +175,7 @@ class PrimerFinder(object):
                 try:
                     primerlist = list(map("".join, product(*map(degenerates.get, str(record.seq)))))
                 except TypeError:
-                    print("Invalid Primer Sequence: {}".format(str(record.seq)))
+                    print("Invalid Primer Sequence: {seq}".format(seq=str(record.seq)))
                     sys.exit()
                 # As the record.id is being updated in the loop below, set the name of the primer here so that will
                 # be able to be recalled when setting the new record.ids
@@ -181,7 +183,7 @@ class PrimerFinder(object):
                 # Iterate through all the possible primers created from any degenerate bases
                 for index, primer in enumerate(primerlist):
                     # Update the primer name with the position in the list to keep the name unique
-                    record.id = primername + '_{}'.format(index)
+                    record.id = primername + '_{index}'.format(index=index)
                     # Clear the description, as, otherwise, it will be added, and there will be duplicate information
                     record.description = ''
                     # Create a seqrecord from the primer sequence
@@ -199,74 +201,112 @@ class PrimerFinder(object):
         """
         Use bbduk to bait FASTQ reads from input files using the primer file as the target
         """
-        for sample in self.metadata:
-            if sample.general.bestassemblyfile != 'NA':
-                # Only need to perform baiting on FASTQ files
-                if sample[self.analysistype].filetype == 'fastq':
-                    # Make the system call - allow for single- or paired-end reads
-                    if len(sample.general.fastqfiles) == 2:
-                        # Create the command to run the baiting - ref: primer file, k: shortest primer length
-                        # in1, in2: paired inputs, hdist: number of mismatches, interleaved: force interleaved output
-                        # outm: single, zipped output file of reads that match the target file
-                        sample[self.analysistype].bbdukcmd = \
-                            'bbduk.sh ref={primerfile} k={klength} in1={forward} in2={reverse} hdist={mismatches} ' \
-                            'threads={threads} interleaved=t outm={outfile}' \
-                            .format(primerfile=self.formattedprimers,
-                                    klength=self.klength,
-                                    forward=sample.general.trimmedcorrectedfastqfiles[0],
-                                    reverse=sample.general.trimmedcorrectedfastqfiles[1],
-                                    mismatches=self.mismatches,
-                                    threads=str(self.cpus),
-                                    outfile=sample[self.analysistype].baitedfastq)
-                    else:
-                        sample[self.analysistype].bbdukcmd = \
-                            'bbduk.sh ref={primerfile} k={klength} in={fastq} hdist={mismatches} threads={threads} ' \
-                            'interleaved=t outm={outfile}' \
-                            .format(primerfile=self.formattedprimers,
-                                    klength=self.klength,
-                                    fastq=sample.general.trimmedcorrectedfastqfiles[0],
-                                    mismatches=self.mismatches,
-                                    threads=str(self.cpus),
-                                    outfile=sample[self.analysistype].baitedfastq)
-                    # Run the system call (if necessary)
-                    if not os.path.isfile(sample[self.analysistype].baitedfastq):
-                        run_subprocess(sample[self.analysistype].bbdukcmd)
+        with progressbar(self.metadata) as bar:
+            for sample in bar:
+                if sample.general.bestassemblyfile != 'NA':
+                    # Only need to perform baiting on FASTQ files
+                    if sample[self.analysistype].filetype == 'fastq':
+                        # Make the system call - allow for single- or paired-end reads
+                        if len(sample.general.fastqfiles) == 2:
+                            # Create the command to run the baiting - ref: primer file, k: shortest primer length
+                            # in1, in2: paired inputs, hdist: number of mismatches, interleaved: use interleaved output
+                            # outm: single, zipped output file of reads that match the target file
+                            sample[self.analysistype].bbdukcmd = \
+                                'bbduk.sh ref={primerfile} k={klength} in1={forward} in2={reverse} ' \
+                                'hdist={mismatches} threads={threads} interleaved=t outm={outfile}' \
+                                .format(primerfile=self.formattedprimers,
+                                        klength=self.klength,
+                                        forward=sample.general.trimmedcorrectedfastqfiles[0],
+                                        reverse=sample.general.trimmedcorrectedfastqfiles[1],
+                                        mismatches=self.mismatches,
+                                        threads=str(self.cpus),
+                                        outfile=sample[self.analysistype].baitedfastq)
+                        else:
+                            sample[self.analysistype].bbdukcmd = \
+                                'bbduk.sh ref={primerfile} k={klength} in={fastq} hdist={mismatches} ' \
+                                'threads={threads} interleaved=t outm={outfile}' \
+                                .format(primerfile=self.formattedprimers,
+                                        klength=self.klength,
+                                        fastq=sample.general.trimmedcorrectedfastqfiles[0],
+                                        mismatches=self.mismatches,
+                                        threads=str(self.cpus),
+                                        outfile=sample[self.analysistype].baitedfastq)
+                        # Run the system call (if necessary)
+                        if not os.path.isfile(sample[self.analysistype].baitedfastq):
+                            run_subprocess(sample[self.analysistype].bbdukcmd)
 
     def doublebait(self):
         """
         In order to ensure that there is enough sequence data to bridge the gap between the two primers, the paired
         .fastq files produced above will be used to bait the original input .fastq files
         """
-        for sample in self.metadata:
-            if sample.general.bestassemblyfile != 'NA':
-                if sample[self.analysistype].filetype == 'fastq':
-                    sample[self.analysistype].doublebaitedfastq = os.path.join(
-                        sample[self.analysistype].outputdir,
-                        '{}_doubletargetMatches.fastq.gz'.format(self.analysistype))
-                    # Make the system call
-                    if len(sample.general.fastqfiles) == 2:
-                        # Create the command to run the baiting
-                        sample[self.analysistype].bbdukcmd2 = \
-                            'bbduk.sh ref={} in1={} in2={} hdist={} threads={} interleaved=t outm={}' \
-                            .format(sample[self.analysistype].baitedfastq,
-                                    sample.general.trimmedcorrectedfastqfiles[0],
-                                    sample.general.trimmedcorrectedfastqfiles[1],
-                                    self.mismatches,
-                                    str(self.cpus),
-                                    sample[self.analysistype].doublebaitedfastq)
-                    else:
-                        sample[self.analysistype].bbdukcmd2 = \
-                            'bbduk.sh ref={} in={} hdist={} threads={} interleaved=t outm={}' \
-                            .format(sample[self.analysistype].baitedfastq,
-                                    sample.general.trimmedcorrectedfastqfiles[0],
-                                    self.mismatches,
-                                    str(self.cpus),
-                                    sample[self.analysistype].doublebaitedfastq)
-                    # Run the system call (if necessary)
-                    if not os.path.isfile(sample[self.analysistype].doublebaitedfastq):
-                        run_subprocess(sample[self.analysistype].bbdukcmd2)
+        with progressbar(self.metadata) as bar:
+            for sample in bar:
+                if sample.general.bestassemblyfile != 'NA':
+                    if sample[self.analysistype].filetype == 'fastq':
+                        sample[self.analysistype].doublebaitedfastq = os.path.join(
+                            sample[self.analysistype].outputdir,
+                            '{at}_doubletargetMatches.fastq.gz'.format(at=self.analysistype))
+                        # Make the system call
+                        if len(sample.general.fastqfiles) == 2:
+                            # Create the command to run the baiting
+                            sample[self.analysistype].bbdukcmd2 = \
+                                'bbduk.sh ref={baitfile} in1={forward} in2={reverse} hdist={mismatches} ' \
+                                'threads={threads} interleaved=t outm={outfile}' \
+                                .format(baitfile=sample[self.analysistype].baitedfastq,
+                                        forward=sample.general.trimmedcorrectedfastqfiles[0],
+                                        reverse=sample.general.trimmedcorrectedfastqfiles[1],
+                                        mismatches=self.mismatches,
+                                        threads=str(self.cpus),
+                                        outfile=sample[self.analysistype].doublebaitedfastq)
+                        else:
+                            sample[self.analysistype].bbdukcmd2 = \
+                                'bbduk.sh ref={baitfile} in={fastq} hdist={mismatches} threads={threads} ' \
+                                'interleaved=t outm={outfile}' \
+                                .format(baitfile=sample[self.analysistype].baitedfastq,
+                                        fastq=sample.general.trimmedcorrectedfastqfiles[0],
+                                        mismatches=self.mismatches,
+                                        threads=str(self.cpus),
+                                        outfile=sample[self.analysistype].doublebaitedfastq)
+                        # Run the system call (if necessary)
+                        if not os.path.isfile(sample[self.analysistype].doublebaitedfastq):
+                            run_subprocess(sample[self.analysistype].bbdukcmd2)
 
-    def assemble_amplicon(self):
+    def assemble_amplicon_skesa(self):
+        """
+        Run skesa to assemble genomes
+        """
+        with progressbar(self.metadata) as bar:
+            for sample in bar:
+                # Initialise variables
+                sample[self.analysistype].skesa_outdir = os.path.join(
+                    sample[self.analysistype].outputdir, self.analysistype)
+                make_path(sample[self.analysistype].skesa_outdir)
+                sample[self.analysistype].assemblyfile = os.path.join(sample[self.analysistype].skesa_outdir,
+                                                                      'contigs.fasta')
+                # If there are two fastq files
+                if len(sample.general.fastqfiles) == 2:
+                    # Set the reverse fastq name https://github.com/ncbi/SKESA/issues/7
+                    sample[self.analysistype].spadescommand = 'skesa --fastq {fastqfiles} --cores {threads} ' \
+                                                              '--use_paired_ends --vector_percent 1 ' \
+                                                              '--contigs_out {contigs}'\
+                        .format(fastqfiles=','.join(sample.general.fastqfiles),
+                                threads=self.cpus,
+                                contigs=sample[self.analysistype].assemblyfile)
+                # Same as above, but use single read settings for the assembler
+                else:
+                    sample[self.analysistype].spadescommand = 'skesa --fastq {fastqfiles} --cores {threads} ' \
+                                                              '--vector_percent 1 --contigs_out {contigs}'\
+                        .format(fastqfiles=','.join(sample.general.fastqfiles),
+                                threads=self.cpus,
+                                contigs=sample[self.analysistype].assemblyfile)
+                if not os.path.isfile(sample[self.analysistype].assemblyfile):
+                    # Create and run the sequence call as required
+                    run_subprocess(sample[self.analysistype].spadescommand)
+                    if not os.path.isfile(sample[self.analysistype].assemblyfile):
+                        sample[self.analysistype].assemblyfile = 'NA'
+
+    def assemble_amplicon_spades(self):
         """
         Use SPAdes to assemble the amplicons using the double-baited .fastq files
         """
@@ -286,18 +326,18 @@ class PrimerFinder(object):
                     # do with the names, or the interleaving. Subsequent testing showed no real changes to assemblies
                     if len(sample.general.fastqfiles) == 2:
                         sample[self.analysistype].spadescommand = \
-                            'spades.py -k {} --only-assembler --12 {} -o {} -t {}'\
-                            .format(self.kmers,
-                                    sample[self.analysistype].doublebaitedfastq,
-                                    sample[self.analysistype].spadesoutput,
-                                    self.threads)
+                            'spades.py -k {klength} --only-assembler --12 {fastq} -o {outfile} -t {threads}'\
+                            .format(klength=self.kmers,
+                                    fastq=sample[self.analysistype].doublebaitedfastq,
+                                    outfile=sample[self.analysistype].spadesoutput,
+                                    threads=self.threads)
                     else:
                         sample[self.analysistype].spadescommand = \
-                            'spades.py -k {} --only-assembler -s {} -o {} -t {}' \
-                            .format(self.kmers,
-                                    sample[self.analysistype].doublebaitedfastq,
-                                    sample[self.analysistype].spadesoutput,
-                                    self.threads)
+                            'spades.py -k {klength} --only-assembler -s {fastq} -o {outfile} -t {threads}' \
+                            .format(klength=self.kmers,
+                                    fastq=sample[self.analysistype].doublebaitedfastq,
+                                    outfile=sample[self.analysistype].spadesoutput,
+                                    threads=self.threads)
                     sample[self.analysistype].assemblyfile = os.path.join(sample[self.analysistype].spadesoutput,
                                                                           'contigs.fasta')
                     self.queue.put(sample)
@@ -319,11 +359,12 @@ class PrimerFinder(object):
         """
         # remove the path and the file extension for easier future globbing
         db = os.path.splitext(self.formattedprimers)[0]
-        nhr = '{}.nhr'.format(db)  # add nhr for searching
+        nhr = '{db}.nhr'.format(db=db)  # add nhr for searching
         if not os.path.isfile(str(nhr)):
             # Create the databases
-            command = 'makeblastdb -in {} -parse_seqids -max_file_sz 2GB -dbtype nucl -out {}'\
-                .format(self.formattedprimers, db)
+            command = 'makeblastdb -in {primerfile} -parse_seqids -max_file_sz 2GB -dbtype nucl -out {outfile}'\
+                .format(primerfile=self.formattedprimers,
+                        outfile=db)
             run_subprocess(command)
 
     def blastnthreads(self):
@@ -351,23 +392,22 @@ class PrimerFinder(object):
             try:
                 sample[self.analysistype].report = glob(os.path.join(
                     sample[self.analysistype].outputdir,
-                    '{}*rawresults*'.format(sample.name)))[0]
+                    '{sn}*rawresults*'.format(sn=sample.name)))[0]
                 size = os.path.getsize(sample[self.analysistype].report)
                 # If a report was created, but no results entered - program crashed, or no sequences passed thresholds,
                 # remove the report, and run the blast analyses again
                 if size == 0:
                     os.remove(sample[self.analysistype].report)
                     sample[self.analysistype].report = os.path.join(sample[self.analysistype].outputdir,
-                                                                    '{}_rawresults.csv'.format(sample.name))
+                                                                    '{sn}_rawresults.csv'.format(sn=sample.name))
             except IndexError:
                 sample[self.analysistype].report = os.path.join(
                     sample[self.analysistype].outputdir,
-                    '{}_rawresults.csv'.format(sample.name))
+                    '{sn}_rawresults.csv'.format(sn=sample.name))
             db = os.path.splitext(self.formattedprimers)[0]
             # BLAST command line call. Note the high number of alignments.
             # Due to the fact that all the targets are combined into one database, this is to ensure that all potential
             # alignments are reported. Also note the custom outfmt: the doubled quotes are necessary to get it work
-
             blastn = NcbiblastnCommandline(query=sample[self.analysistype].assemblyfile,
                                            db=db,
                                            evalue=1e-1,
@@ -559,7 +599,7 @@ class PrimerFinder(object):
         for sample in self.metadata:
             # Set the name of the amplicon FASTA file
             sample[self.analysistype].ampliconfile = os.path.join(
-                sample[self.analysistype].outputdir, '{}_amplicons.fa'.format(sample.name))
+                sample[self.analysistype].outputdir, '{sn}_amplicons.fa'.format(sn=sample.name))
             try:
                 os.remove(sample[self.analysistype].ampliconfile)
             except IOError:
@@ -651,8 +691,17 @@ class PrimerFinder(object):
                 # Remove attributes that either take up too much room in the .json output, or are not JSON serializable
                 try:
                     delattr(sample[self.analysistype], "blastresults")
+                except AttributeError:
+                    pass
+                try:
                     delattr(sample[self.analysistype], "genespresent")
+                except AttributeError:
+                    pass
+                try:
                     delattr(sample[self.analysistype], "contigs")
+                except AttributeError:
+                    pass
+                try:
                     delattr(sample[self.analysistype], "range")
                 except AttributeError:
                     pass
@@ -785,11 +834,11 @@ if __name__ == '__main__':
                              '>primer2-F\n'
                              '.......\n')
     parser.add_argument('-m', '--mismatches',
-                        default=0,
-                        help='Number of mismatches allowed [0-3]. Default is 0')
+                        default=1,
+                        help='Number of mismatches allowed [0-3]. Default is 1')
     parser.add_argument('-k', '--kmerlength',
-                        default='99',
-                        help='The range of kmers used in SPAdes assembly. Default is 99, but you can'
+                        default='55,77,99,127',
+                        help='The range of kmers used in SPAdes assembly. Default is 55,77,99,127, but you can '
                              'provide a comma-separated list of kmers e.g. 21,33,55,77,99,127 or a single kmer e.g. 33')
     parser.add_argument('-d', '--debug',
                         action='store_true',
