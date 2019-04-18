@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-
-from accessoryFunctions.accessoryFunctions import filer, GenObject, printtime, make_path, MetadataObject
+from accessoryFunctions.accessoryFunctions import filer, GenObject, make_path, MetadataObject, SetupLogging
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio import SeqIO
 from Bio import Seq
@@ -8,12 +7,13 @@ from argparse import ArgumentParser
 from itertools import product
 from threading import Thread
 from subprocess import call
-from csv import DictReader, Sniffer
+from csv import DictReader
 from queue import Queue
 import multiprocessing
 from glob import glob
 import itertools
 import operator
+import logging
 import errno
 import time
 import os
@@ -29,7 +29,7 @@ class PrimerFinder(object):
         """
         Run the necessary methods
         """
-        printtime('Preparing metadata', self.start)
+        logging.info('Preparing metadata')
         # If this script is run as part of a pipeline, the metadata objects will already exist
         if not self.metadata:
             self.filer()
@@ -42,23 +42,23 @@ class PrimerFinder(object):
                 self.metadata) > 1 else 1
         except (TypeError, ZeroDivisionError):
             self.threads = self.cpus
-        printtime('Reading and formatting primers', self.start)
+        logging.info('Reading and formatting primers')
         self.primers()
-        printtime('Baiting .fastq files against primers', self.start)
+        logging.info('Baiting .fastq files against primers')
         self.bait()
-        printtime('Baiting .fastq files against previously baited .fastq files', self.start)
+        logging.info('Baiting .fastq files against previously baited .fastq files')
         self.doublebait()
-        printtime('Assembling contigs from double-baited .fastq files', self.start)
+        logging.info('Assembling contigs from double-baited .fastq files')
         self.assemble_amplicon()
-        printtime('Creating BLAST database', self.start)
+        logging.info('Creating BLAST database')
         self.make_blastdb()
-        printtime('Running BLAST analyses', self.start)
+        logging.info('Running BLAST analyses')
         self.blastnthreads()
-        printtime('Parsing BLAST results', self.start)
+        logging.info('Parsing BLAST results')
         self.parseblast()
-        printtime('Clearing amplicon files from previous iterations', self.start)
+        logging.info('Clearing amplicon files from previous iterations')
         self.ampliconclear()
-        printtime('Creating reports', self.start)
+        logging.info('Creating reports')
         self.reporter()
 
     def filer(self):
@@ -449,12 +449,14 @@ class PrimerFinder(object):
                         # accounts for primer names with "-" in addition to the terminal "-F" or "-R"
                         try:
                             sample[self.analysistype].blastresults[row['query_id']].add(row['subject_id'])
-                            sample[self.analysistype].contigs[row['query_id']].add('-'.join(row['subject_id'].split('-')[:-1]))
+                            sample[self.analysistype].contigs[row['query_id']].add('-'.join(row['subject_id']
+                                                                                            .split('-')[:-1]))
                         except KeyError:
                             sample[self.analysistype].blastresults[row['query_id']] = set()
                             sample[self.analysistype].blastresults[row['query_id']].add(row['subject_id'])
                             sample[self.analysistype].contigs[row['query_id']] = set()
-                            sample[self.analysistype].contigs[row['query_id']].add('-'.join(row['subject_id'].split('-')[:-1]))
+                            sample[self.analysistype].contigs[row['query_id']].add('-'.join(row['subject_id']
+                                                                                            .split('-')[:-1]))
                 # Check to see if both forward and reverse primers are present for a particular gene within a contig
                 for contig, genes in sample[self.analysistype].contigs.items():
                     # Split off the primer details (e.g. vtx2a-R3_1 -> vtx2a-R) from the blast results dictionary in
@@ -657,7 +659,7 @@ class PrimerFinder(object):
                     else:
                         data += '{}\n'.format(sample.name)
                 # If there were no BLAST hits, add the sample name, and nothing else
-                except KeyError:
+                except AttributeError:
                     data += '{}\n'.format(sample.name)
                 # Remove attributes that either take up too much room in the .json output, or are not JSON serializable
                 try:
@@ -665,7 +667,7 @@ class PrimerFinder(object):
                     delattr(sample[self.analysistype], "genespresent")
                     delattr(sample[self.analysistype], "contigs")
                     delattr(sample[self.analysistype], "range")
-                except KeyError:
+                except AttributeError:
                     pass
             # Write the string to the report
             report.write(data)
@@ -725,7 +727,7 @@ class PrimerFinder(object):
                                 SeqIO.write(record, ampliconfile, 'fasta')
                             except IndexError:
                                 pass
-                        except KeyError:
+                        except AttributeError:
                             pass
             except FileNotFoundError:
                 pass
@@ -770,7 +772,7 @@ class PrimerFinder(object):
         # Set and create the report path
         self.reportpath = os.path.join(self.path, 'consolidated_report')
         make_path(self.reportpath)
-        self.report = os.path.join(self.reportpath, '{}_report.csv'.format(self.analysistype))
+        self.report = os.path.join(self.reportpath, '{at}_report.csv'.format(at=self.analysistype))
         # The default length for the initial baiting - if there are primers shorter than this, then the shortest
         # value will be used
         self.klength = 20
@@ -804,18 +806,19 @@ if __name__ == '__main__':
                         default='99',
                         help='The range of kmers used in SPAdes assembly. Default is 99, but you can'
                              'provide a comma-separated list of kmers e.g. 21,33,55,77,99,127 or a single kmer e.g. 33')
-
+    parser.add_argument('-d', '--debug',
+                        action='store_true',
+                        help='Allow debug-level logging to be printed to the terminal')
     # Get the arguments into an object
     arguments = parser.parse_args()
     arguments.pipeline = False
-
+    SetupLogging(debug=arguments.debug)
     # Define the start time
     arguments.start = time.time()
 
     # Run the script
-    finder = PrimerFinder(arguments, 'ePCR')
+    finder = PrimerFinder(args=arguments, 
+                          analysistype='ePCR')
     # Run the script
     finder.main()
-
-    # Print a bold, green exit statement
-    print('\033[92m' + '\033[1m' + "\nElapsed Time: %0.2f seconds" % (time.time() - arguments.start) + '\033[0m')
+    logging.info('ePCR analyses complete')
