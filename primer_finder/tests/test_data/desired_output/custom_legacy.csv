@@ -1,0 +1,4 @@
+Sample,Gene,GenomeLocation,AmpliconSize,Contig,TotalMismatches,PrimerSet
+2014-SEQ-0121_fasta,O157,68570-68828,259,2014-SEQ-0121_19_length_98566_cov_22.5132_ID_10712,0,O157_0_0
+2014-SEQ-0132
+2014-SEQ-1390,stn,27409-27668,260,2014-SEQ-1390_32_length_32477_cov_33.4201_ID_2281,0,stn_0_0

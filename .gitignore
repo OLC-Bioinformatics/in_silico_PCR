@@ -1,0 +1,18 @@
+# Compiled Python Files #
+#########################
+*.pyc
+
+# Edited text files #
+#####################
+*~
+
+# Log files #
+#############
+*.log
+
+# Package files #
+#################
+build/
+dist/
+*.egg-info/
+in_silico_pcr/
