@@ -58,6 +58,7 @@ def cli():
                                help='Path of folder containing .fasta/.fastq(.gz) files to process.')
     parent_parser.add_argument('-m', '--mismatches',
                                default=1,
+                               type=int,
                                choices=[0, 1, 2, 3],
                                help='Number of mismatches allowed [0-3]. Default is 1')
     parent_parser.add_argument('-d', '--debug',
