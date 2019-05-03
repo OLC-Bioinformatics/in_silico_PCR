@@ -18,7 +18,7 @@ __author__ = 'adamkoziol'
 def create_validator(reference_csv, test_csv):
     global validator, column_list
     column_list = validate.find_all_columns(csv_file=reference_csv,
-                                            columns_to_exclude=['Sample'])
+                                            columns_to_exclude=['Sample', 'Contig', 'GenomeLocation'])
     validator = validate.Validator(reference_csv=reference_csv,
                                    test_csv=test_csv,
                                    column_list=column_list,
@@ -75,7 +75,7 @@ def test_o157_lmhyla_stn():
                       sequence_path=test_sequences_path,
                       primer_file=os.path.join(test_primer_folder, 'O157_LMhlyA_stn.txt'),
                       mismatches=0,
-                      kmer_length='55,77,99,127',
+                      kmer_length='55',
                       analysistype='O157_LMhylA_stn')
     pf.main()
 
@@ -97,7 +97,7 @@ def test_degenerate_primers():
                       sequence_path=test_sequences_path,
                       primer_file=os.path.join(test_primer_folder, 'degenerate.txt'),
                       mismatches=0,
-                      kmer_length='55,77,99,127',
+                      kmer_length='55',
                       analysistype='degenerate')
     pf.main()
 

@@ -23,6 +23,10 @@ The longer the reads in the FASTQ file(s), the better the assembly and the fewer
 
 `conda install -c adamkoziol in_silico_pcr`
 
+you may need to add the bioconda channel
+
+`conda config --add channels bioconda`
+
 ## Inputs
 
 1. Primer pair list (fasta). Primer names have to end with “-F” or “-R”. Note: it is possible to have an integer 
