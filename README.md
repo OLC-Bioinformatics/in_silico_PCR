@@ -1,6 +1,9 @@
 ## Description
 
-This tool is an attempt to do _in silico_ PCRs from .fastq(.gz) or .fasta files. 
+[![Build Status](https://travis-ci.org/adamkoziol/in_silico_PCR.svg?branch=master)](https://travis-ci.org/adamkoziol/in_silico_PCR)
+
+
+This performs _in silico_ PCRs from .fastq(.gz) or .fasta files. 
 
 The script uses bbduk to bait reads containing the primer sequences from the .fastq(.gz) files. It 
 performs a second round of baiting on the original .fastq(.gz) files with the newly created baited
