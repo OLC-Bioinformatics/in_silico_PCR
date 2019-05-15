@@ -30,7 +30,7 @@ you may need to add the bioconda channel
 ## Inputs
 
 1. Primer pair list (fasta). Primer names have to end with “-F” or “-R”. Note: it is possible to have an integer 
-following the direction: >vtx1a-F1 or >vtx1a-F are both acceptable
+following the direction: `>vtx1a-F1` or `>vtx1a-F` are both acceptable
 2. Raw reads (FASTQ) or assemblies (FASTA)
 
 ## Required arguments
