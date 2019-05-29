@@ -9,7 +9,8 @@ before_install:
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
   - conda config --add channels bioconda
-  - conda install -c adamkoziol in_silico_pcr=0.0.2.2
+  - conda config --add channels conda-forge
+  - conda install -c adamkoziol in_silico_pcr
 
 script:
   - pytest -s -vv --maxfail=1
