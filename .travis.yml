@@ -12,4 +12,4 @@ before_install:
   - conda install -c adamkoziol in_silico_pcr
 
 script:
-  - pytest --pyargs primer_finder -s -vv --maxfail=1
+  - pytest -s -vv --maxfail=1
