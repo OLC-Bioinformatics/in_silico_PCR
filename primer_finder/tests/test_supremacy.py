@@ -1,5 +1,5 @@
 #!/usr/bin/env python 3
-from spadespipeline.primer_finder_bbduk import PrimerFinder
+from genemethods.assemblypipeline.primer_finder_bbduk import PrimerFinder
 from validator_helper import validate
 import pytest
 import shutil

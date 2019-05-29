@@ -10,7 +10,6 @@ before_install:
   - conda update -q conda
   - conda config --add channels bioconda
   - conda install -c adamkoziol in_silico_pcr
-  - pip install validator_helper
 
 script:
-  - python -m pytest --pyargs primer_finder -s -vv --maxfail=1
+  - pytest --pyargs primer_finder -s -vv --maxfail=1

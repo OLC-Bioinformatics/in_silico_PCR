@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-from accessoryFunctions.accessoryFunctions import MetadataObject, SetupLogging
-from spadespipeline.primer_finder_bbduk import PrimerFinder
-from spadespipeline.legacy_vtyper import Custom, Filer, Vtyper
+from olctools.accessoryFunctions.accessoryFunctions import MetadataObject, SetupLogging
+from genemethods.assemblypipeline.primer_finder_bbduk import PrimerFinder
+from genemethods.assemblypipeline.legacy_vtyper import Custom, Filer, Vtyper
 from argparse import ArgumentParser, RawTextHelpFormatter
 from time import time
 import logging

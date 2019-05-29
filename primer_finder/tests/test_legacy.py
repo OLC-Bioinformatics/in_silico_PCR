@@ -1,6 +1,6 @@
 #!/usr/bin/env python 3
-from accessoryFunctions.accessoryFunctions import MetadataObject
-from spadespipeline.legacy_vtyper import Custom, Filer, Vtyper
+from olctools.accessoryFunctions.accessoryFunctions import MetadataObject
+from genemethods.assemblypipeline.legacy_vtyper import Custom, Filer, Vtyper
 from validator_helper import validate
 from argparse import ArgumentParser
 from time import time
