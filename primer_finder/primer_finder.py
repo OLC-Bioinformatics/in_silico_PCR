@@ -6,6 +6,7 @@ from argparse import ArgumentParser, RawTextHelpFormatter
 from time import time
 import logging
 import os
+
 __author__ = 'adamkoziol'
 
 
@@ -61,6 +62,15 @@ def cli():
                                type=int,
                                choices=[0, 1, 2, 3],
                                help='Number of mismatches allowed [0-3]. Default is 1')
+    parent_parser.add_argument('-pf', '--primerfile',
+                               help='Absolute path and name of the primer file (in FASTA format) to test. The file\n'
+                                    'must have every primer on a separate line AND -F/-R following the name e.g.\n'
+                                    '>primer1-F\n'
+                                    'ATCGACTGACAC....\n'
+                                    '>primer1-R\n'
+                                    'ATCGATCGATCGATG....\n'
+                                    '>primer2-F\n'
+                                    '.......\n')
     parent_parser.add_argument('-d', '--debug',
                                action='store_true',
                                help='Allow debug-level logging to be printed to the terminal')
@@ -77,15 +87,7 @@ def cli():
                                   choices=['vtyper', 'custom'],
                                   help='Either perform the standard vtyper analysis using the included primer files, \n'
                                        'or supply your own FASTA-formatted (multi-)primer file')
-    legacy_subparser.add_argument('-pf', '--primerfile',
-                                  help='Absolute path and name of the primer file (in FASTA format) to test. The file\n'
-                                       'must have every primer on a separate line AND -F/-R following the name e.g.\n'
-                                       '>primer1-F\n'
-                                       'ATCGACTGACAC....\n'
-                                       '>primer1-R\n'
-                                       'ATCGATCGATCGATG....\n'
-                                       '>primer2-F\n'
-                                       '.......\n')
+
     legacy_subparser.add_argument('-e', '--export_amplicons',
                                   action='store_true',
                                   help='Export the sequence of the calculated amplicons. Default is False')
@@ -105,16 +107,6 @@ def cli():
     supremacy_subparser.add_argument('-p', '--path',
                                      required=True,
                                      help='Specify directory in which reports are to be created')
-    supremacy_subparser.add_argument('-pf', '--primerfile',
-                                     required=True,
-                                     help='Absolute path and name of the primer file (in FASTA format) to test. \n'
-                                          'The file must have every primer on a separate line AND -F/-R following \n '
-                                          'the name e.g.\n'
-                                          '>primer1-F\n'
-                                          'ATCGACTGACAC....\n'
-                                          '>primer1-R\n'
-                                          'ATCGATCGATCGATG....\n'
-                                          '.......\n')
     supremacy_subparser.add_argument('-n', '--cpus',
                                      default=0,
                                      help='Number of threads. Default is the number of cores in the system')
