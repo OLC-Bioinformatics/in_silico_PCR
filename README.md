@@ -1,6 +1,6 @@
 ## Description
 
-[![Build Status](https://travis-ci.org/adamkoziol/in_silico_PCR.svg?branch=master)](https://travis-ci.org/adamkoziol/in_silico_PCR)
+
 
 
 This performs _in silico_ PCRs from .fastq(.gz) or .fasta files. 

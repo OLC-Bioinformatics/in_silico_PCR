@@ -3,11 +3,11 @@ from setuptools import setup, find_packages
 import os
 setup(
     name="in_silico_pcr",
-    version="0.0.2.2",
+    version="0.0.2.4",
     scripts=[os.path.join('primer_finder', 'primer_finder.py')],
     packages=find_packages(),
     include_package_data=True,
     author="Adam Koziol",
-    author_email="adam.koziol@canada.ca",
+    author_email="adam.koziol@inspection.gc.ca",
     url="https://github.com/adamkoziol/in_silico_PCR",
 )
