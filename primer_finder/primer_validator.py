@@ -50,15 +50,16 @@ class PrimerValidator:
         :return: Populated results_dict
         """
         logging.info(f'Parsing {group}')
+        # Extract the names of all the primer sets in the analyses
+        for primer in primer_dict:
+            if primer not in results_dict:
+                results_dict[primer] = dict()
+            # Add the inclusivity/exclusivity group to the dictionary
+            if group not in results_dict[primer]:
+                results_dict[primer][group] = dict()
         # Iterate through all the samples in the supplied panel (inclusivity/exclusivity)
         for sample in metadata:
-            # Extract the names of all the primer sets in the analyses
             for primer in primer_dict:
-                if primer not in results_dict:
-                    results_dict[primer] = dict()
-                # Add the inclusivity/exclusivity group to the dictionary
-                if group not in results_dict[primer]:
-                    results_dict[primer][group] = dict()
                 # Iterate through all the primer sets in the analyses
                 for experiment in sample[analysistype].results.datastore:
                     # Remove the trailing _$PRIMER_NUMBER from the experiment to match the supplied primer name
