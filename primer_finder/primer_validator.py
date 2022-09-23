@@ -8,6 +8,7 @@ from olctools.accessoryFunctions.accessoryFunctions import \
     SetupLogging
 from genemethods.assemblypipeline.primer_finder_ipcress import CustomIP, make_blastdb
 from genemethods.assemblypipeline.legacy_vtyper import Filer
+from in_silico_PCR.primer_finder.version import __version__
 
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio.SeqRecord import SeqRecord
@@ -31,7 +32,7 @@ class PrimerValidator:
 
     def main(self):
         # Inclusion
-        self.results = self.parse_outputs(
+        self.results, self.inclusivity_miss_dict = self.parse_outputs(
             metadata=self.inclusion_metadata,
             analysistype=self.analysistype,
             group='inclusivity',
@@ -42,7 +43,7 @@ class PrimerValidator:
             validator_report_path=self.report_path
         )
         # Exclusion
-        self.results = self.parse_outputs(
+        self.results, self.exclusivity_miss_dict = self.parse_outputs(
             metadata=self.exclusion_metadata,
             analysistype=self.analysistype,
             group='exclusivity',
@@ -77,13 +78,15 @@ class PrimerValidator:
                 cutoff=self.cutoff,
                 results_dict=self.results
             )
-            self.create_probe_report(metadata=self.inclusion_metadata,
-                                     primer_dict=self.primer_dict,
-                                     probe_dict=self.probe_dict,
-                                     group='inclusivity',
-                                     report_path=self.inclusion_report_path,
-                                     validator_report_path=self.report_path
-                                     )
+            self.create_probe_report(
+                metadata=self.inclusion_metadata,
+                primer_dict=self.primer_dict,
+                probe_dict=self.probe_dict,
+                group='inclusivity',
+                report_path=self.inclusion_report_path,
+                validator_report_path=self.report_path,
+                miss_dict=self.inclusivity_miss_dict
+            )
             self.exclusion_metadata = self.probe_blast(
                 metadata=self.exclusion_metadata,
                 analysistype='probe',
@@ -103,21 +106,48 @@ class PrimerValidator:
                 cutoff=self.cutoff,
                 results_dict=self.results
             )
-            self.create_probe_report(metadata=self.exclusion_metadata,
-                                     primer_dict=self.primer_dict,
-                                     probe_dict=self.probe_dict,
-                                     group='exclusivity',
-                                     report_path=self.exclusion_report_path,
-                                     validator_report_path=self.report_path
-                                     )
-            self.create_excel_report(
-                report=os.path.join(self.inclusion_report_path, 'custom_epcr_report.csv'),
+            self.create_probe_report(
+                metadata=self.exclusion_metadata,
+                primer_dict=self.primer_dict,
+                probe_dict=self.probe_dict,
+                group='exclusivity',
+                report_path=self.exclusion_report_path,
+                validator_report_path=self.report_path,
+                miss_dict=self.exclusivity_miss_dict
+            )
+        self.create_excel_report(
+            report=os.path.join(self.inclusion_report_path, 'custom_epcr_report.csv'),
+            group='inclusivity',
+            report_path=self.report_path
+        )
+        self.create_excel_report(
+            report=os.path.join(self.exclusion_report_path, 'custom_epcr_report.csv'),
+            group='exclusivity',
+            report_path=self.report_path
+        )
+        self.missing_report(
+            miss_dict=self.inclusivity_miss_dict,
+            group='inclusivity',
+            analysis='primer',
+            report_path=self.report_path
+        )
+        self.missing_report(
+            miss_dict=self.exclusivity_miss_dict,
+            group='exclusivity',
+            analysis='primer',
+            report_path=self.report_path
+        )
+        if self.probe_file:
+            self.missing_report(
+                miss_dict=self.inclusivity_miss_dict,
                 group='inclusivity',
+                analysis='probe',
                 report_path=self.report_path
             )
-            self.create_excel_report(
-                report=os.path.join(self.exclusion_report_path, 'custom_epcr_report.csv'),
+            self.missing_report(
+                miss_dict=self.exclusivity_miss_dict,
                 group='exclusivity',
+                analysis='probe',
                 report_path=self.report_path
             )
         self.results = self.calculate_percentages(results_dict=self.results)
@@ -143,10 +173,16 @@ class PrimerValidator:
         :return: Populated results_dict
         """
         logging.info(f'Parsing {group}')
+        # Initialise a dictionary to store the names of samples that do not have hits
+        empty_results = dict()
+        if 'primer' not in empty_results:
+            empty_results['primer'] = dict()
         # Extract the names of all the primer sets in the analyses
         for primer in primer_dict:
             if primer not in results_dict:
                 results_dict[primer] = dict()
+            if primer not in empty_results['primer']:
+                empty_results['primer'][primer] = list()
             # Add the inclusivity/exclusivity group to the dictionary
             if group not in results_dict[primer]:
                 results_dict[primer][group] = dict()
@@ -184,9 +220,12 @@ class PrimerValidator:
                 # If there were no results for the SEQID, add an empty dictionary in place of the primer details
                 if sample.name not in results_dict[primer][group]:
                     results_dict[primer][group][sample.name] = dict()
+                    # Add the sample name to the list of missing samples in the dictionary
+                    if sample.name not in empty_results['primer'][primer]:
+                        empty_results['primer'][primer].append(sample.name)
                 logging.debug(f'Sample {sample.name} in panel {group}, primer set {primer} has the following outputs: '
                               f'{results_dict[primer][group][sample.name]}')
-        return results_dict
+        return results_dict, empty_results
 
     @staticmethod
     def write_amplicon_sequence(sample, contig_results, primer, amplicon_path, validator_report_path):
@@ -394,7 +433,7 @@ class PrimerValidator:
         return metadata
 
     @staticmethod
-    def create_probe_report(metadata, primer_dict, probe_dict, group, report_path, validator_report_path):
+    def create_probe_report(metadata, primer_dict, probe_dict, group, report_path, validator_report_path, miss_dict):
         """
         Create an Excel report of the probe outputs
         :param metadata: List of metadata objects for samples in the inclusivity or exclusivity panel
@@ -405,25 +444,15 @@ class PrimerValidator:
         written
         :param validator_report_path: String of the name and path of the folder into which the validator reports are
         to be written
+        :param miss_dict: Dictionary of 'primer/probe':primer/probe name: list of samples without hits
         """
         logging.info('Creating probe report')
-        # Create a workbook to store the report. Using xlsxwriter rather than a simple csv format, as I want to be
-        # able to have appropriately sized, multi-line cells
-        report_name = f'{group}_probe_report.xlsx'
-        report = os.path.join(
-                report_path, report_name
-            )
-        workbook = xlsxwriter.Workbook(report)
-        # New worksheet to store the data
-        worksheet = workbook.add_worksheet()
-        # Add a bold format for header cells. Using a monotype font size 10
-        bold = workbook.add_format({'bold': True, 'font_name': 'Courier New', 'font_size': 10})
-        # Format for data cells. Monotype, size 10, top vertically justified
-        courier = workbook.add_format({'font_name': 'Courier New', 'font_size': 10})
-        courier.set_align('top')
-        # Initialise the position within the worksheet to be (0,0)
-        row = 0
-        col = 0
+        # Prepare the Excel file, and set necessary variables
+        report_name, report, workbook, worksheet, bold, courier, row, col = PrimerValidator.prep_worksheet(
+            group=group,
+            report_path=report_path,
+            analysis='probe'
+        )
         # Initialise a list of all the headers with 'Strain'
         headers = [
             'Sample',
@@ -480,6 +509,15 @@ class PrimerValidator:
                         ]
                     # If there were no hits, the necessary attributes will not be present
                     except AttributeError:
+                        # Initialise the necessary keys as required in the dictionary that stores samples that
+                        # do not have hits for the current primer/probe combination
+                        if 'probe' not in miss_dict:
+                            miss_dict['probe'] = dict()
+                        if probe not in miss_dict['probe']:
+                            miss_dict['probe'][probe] = list()
+                        # Add the sample name to the list in the dictionary
+                        if sample.name not in miss_dict['probe'][probe]:
+                            miss_dict['probe'][probe].append(sample.name)
                         # Only samples that had no hits at all will not have the probe_file attribute
                         if not GenObject.isattr(sample.probe, 'probe_file'):
                             # Add the sample name only once
@@ -503,6 +541,43 @@ class PrimerValidator:
         workbook.close()
         # Copy the report to the combined report path
         shutil.copyfile(report, os.path.join(validator_report_path, report_name))
+        return miss_dict
+
+    @staticmethod
+    def prep_worksheet(group, report_path, analysis):
+        """
+        Create a workbook with a worksheet. Also set font styles for use in writing the report
+        :param group: String of whether the group is in the inclusivity or exclusivity panel
+        :param report_path: String of the name and path of the folder into which the group-specific reports are to be
+        written
+        :param analysis: String of the current analysis type: primer or probe
+        :return: report_name: String of the name of the report
+        :return: report: String of the name and path of the report
+        :return: workbook: xlsxwriter.Workbook object
+        :return: worksheet: xlsxwriter.Workbook.add_worksheet object
+        :return: bold: xlsxwriter.Workbook.add_format object setting font to bold, Courier New 10
+        :return: courier: xlsxwriter.Workbook.add_format object setting font to regular, Courier New 10
+        :return: row: Integer for the initial row to use (set to 0)
+        :return: col: Integer for the intial column to use (set to 0)
+        """
+        # Create a workbook to store the report. Using xlsxwriter rather than a simple csv format, as I want to be
+        # able to have appropriately sized, multi-line cells
+        report_name = f'{group}_{analysis}_report.xlsx'
+        report = os.path.join(
+            report_path, report_name
+        )
+        workbook = xlsxwriter.Workbook(report)
+        # New worksheet to store the data
+        worksheet = workbook.add_worksheet()
+        # Add a bold format for header cells. Using a monotype font size 10
+        bold = workbook.add_format({'bold': True, 'font_name': 'Courier New', 'font_size': 10})
+        # Format for data cells. Monotype, size 10, top vertically justified
+        courier = workbook.add_format({'font_name': 'Courier New', 'font_size': 10})
+        courier.set_align('top')
+        # Initialise the position within the worksheet to be (0,0)
+        row = 0
+        col = 0
+        return report_name, report, workbook, worksheet, bold, courier, row, col
 
     @staticmethod
     def return_mismatches(sample, primer, probe):
@@ -532,6 +607,35 @@ class PrimerValidator:
                     f'{query_stop}{sample.probe[primer][probe].details["subject_sequence"][subject_start]}>' \
                     f'{sample.probe[primer][probe].details["query_sequence"][query_start]}'
         return mismatches
+
+    @staticmethod
+    def create_excel_report(report, group, report_path):
+        """
+        Use pandas to read in a supplied CSV report, and convert it to a properly-formatted Excel file
+        :param report: String of the name and path of the CSV report to process
+        :param group: String of whether the group is in the inclusivity or exclusivity panel
+        :param report_path: String of the name and path of the folder into which the group-specific reports are to be
+        written
+        """
+        # Read in the CSV report
+        df = pd.read_csv(report)
+        # https://stackoverflow.com/a/61617835
+        # Create an pandas.ExcelWriter object
+        writer = pd.ExcelWriter(os.path.join(report_path, f'{group}_primer_report.xlsx'))
+        # Convert the dataframe imported from the CSV report to Excel format. Set the name of the first sheet to
+        # 'Sheet1', do not index (ignore the primary key column), and use 'ND' for NaN cells
+        df.to_excel(writer, sheet_name='Sheet1', index=False, na_rep='ND')
+        for column in df:
+            # Find the length of the longest cell contents
+            column_width = max(df[column].astype(str).map(len).max(), len(column))
+            # If the width is less than 25, set it to 25 in order for the headers to fit
+            column_width = column_width if column_width >= 25 else 25
+            # Find the index of the column
+            col_idx = df.columns.get_loc(column)
+            # Set the width of the column
+            writer.sheets['Sheet1'].set_column(col_idx, col_idx, column_width)
+        # Save the changes to the writer object
+        writer.save()
 
     @staticmethod
     def calculate_percentages(results_dict):
@@ -566,36 +670,54 @@ class PrimerValidator:
                     f'Primer set {primer} in group {group} had {results_dict[primer][group]["positive"]}, out of '
                     f'{results_dict[primer][group]["total"]}, for a percentage of '
                     f'{results_dict[primer][group]["percent"]}')
+        # Add the version of the pipeline to the outputs
+        results_dict['validator_version'] = __version__
         return results_dict
 
     @staticmethod
-    def create_excel_report(report, group, report_path):
+    def missing_report(miss_dict, group, analysis, report_path):
         """
-        Use pandas to read in a supplied CSV report, and convert it to a properly-formatted Excel file
-        :param report: String of the name and path of the CSV report to process
+        Create an Excel report containing the sample names that do not have results for the current group
+        (inclusivity/exclusivity) and analysis type (primer/probe)
+        :param miss_dict: Dictionary of 'primer/probe':primer/probe name: list of samples without hits
         :param group: String of whether the group is in the inclusivity or exclusivity panel
+        :param analysis: String of the current analysis type: primer or probe
         :param report_path: String of the name and path of the folder into which the group-specific reports are to be
         written
         """
-        # Read in the CSV report
-        df = pd.read_csv(report)
-        # https://stackoverflow.com/a/61617835
-        # Create an pandas.ExcelWriter object
-        writer = pd.ExcelWriter(os.path.join(report_path, f'{group}_primer_report.xlsx'))
-        # Convert the dataframe imported from the CSV report to Excel format. Set the name of the first sheet to
-        # 'Sheet1', do not index (ignore the primary key column), and use 'ND' for NaN cells
-        df.to_excel(writer, sheet_name='Sheet1', index=False, na_rep='ND')
-        for column in df:
-            # Find the length of the longest cell contents
-            column_width = max(df[column].astype(str).map(len).max(), len(column))
-            # If the width is less than 25, set it to 25 in order for the headers to fit
-            column_width = column_width if column_width >= 25 else 25
-            # Find the index of the column
-            col_idx = df.columns.get_loc(column)
-            # Set the width of the column
-            writer.sheets['Sheet1'].set_column(col_idx, col_idx, column_width)
-        # Save the changes to the writer object
-        writer.save()
+        logging.info(f'Creating report for samples with no hits for {group} {analysis}')
+        # Create the workbook
+        report_name, report, workbook, worksheet, bold, courier, row, col = PrimerValidator.prep_worksheet(
+            group=group,
+            report_path=report_path,
+            analysis=f'{analysis}_missing'
+        )
+        # Initialise a list to store the primers/probes in the dictionary
+        headers = list()
+        for primer, sample_list in miss_dict[analysis].items():
+            headers.append(primer)
+        # Sort the headers
+        headers = sorted(headers)
+        # Write the primer/probe names to the header
+        for header in headers:
+            worksheet.write(row, col, header, bold)
+            # Set the width of the column to 15 (fits OLC SEQIDs well e.g. 2014-SEQ-0276)
+            worksheet.set_column(col, col, 15)
+            col += 1
+        # Reset the column to 0 in order to add the data
+        col = 0
+        # Iterate through all the primers/probes
+        for header in headers:
+            # Reset the row number to 1 for each list of sample names
+            row = 1
+            for sample_name in miss_dict[analysis][header]:
+                # Write the sample name to the worksheet
+                worksheet.write(row, col, sample_name, courier)
+                row += 1
+            # Increase the column number for each primer/probe
+            col += 1
+        # Close the workbook
+        workbook.close()
 
     def __init__(self, inclusion_metadata, exclusion_metadata, primers, report_path, inclusion_report_path,
                  exclusion_report_path, probe_file, cutoff):
@@ -619,10 +741,13 @@ class PrimerValidator:
             'amplicons'
         )
         make_path(self.exclusion_amplicon_path)
-        if probe_file.startswith('~'):
-            self.probe_file = os.path.abspath(os.path.expanduser(os.path.join(probe_file)))
+        if probe_file:
+            if probe_file.startswith('~'):
+                self.probe_file = os.path.abspath(os.path.expanduser(os.path.join(probe_file)))
+            else:
+                self.probe_file = os.path.abspath(os.path.join(probe_file))
         else:
-            self.probe_file = os.path.abspath(os.path.join(probe_file))
+            self.probe_file = str()
         self.cutoff = cutoff
         try:
             assert 49 < self.cutoff < 101
@@ -638,6 +763,8 @@ class PrimerValidator:
         self.analysistype = 'custom_epcr'
         self.results = dict()
         self.probe_dict = dict()
+        self.inclusivity_miss_dict = dict()
+        self.exclusivity_miss_dict = dict()
         self.threads = multiprocessing.cpu_count() - 1
         self.headers = [
             'Sample,'
