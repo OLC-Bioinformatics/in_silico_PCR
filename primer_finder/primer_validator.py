@@ -1,32 +1,36 @@
 #!/usr/bin/env python
+# Standard library imports
+from importlib import metadata
+from csv import DictReader
+import multiprocessing
+import difflib
+import logging
 import shutil
+import json
+import os
 
+# Third party imports
+from Bio.Blast.Applications import NcbiblastnCommandline
+from Bio.SeqRecord import SeqRecord
+from Bio.Seq import Seq
+from Bio import SeqIO
+from argparse import ArgumentParser
+import pandas as pd
+import xlsxwriter
+
+# Local imports
 from olctools.accessoryFunctions.accessoryFunctions import \
     GenObject, \
     make_path, \
     MetadataObject, \
     SetupLogging
-from genemethods.assemblypipeline.primer_finder_ipcress import CustomIP, make_blastdb
+from genemethods.assemblypipeline.primer_finder_ipcress import \
+    CustomIP, \
+    make_blastdb
 from genemethods.assemblypipeline.legacy_vtyper import Filer
 
-from Bio.Blast.Applications import NcbiblastnCommandline
-from Bio.SeqRecord import SeqRecord
-from Bio.Seq import Seq
-from Bio import SeqIO
-import pandas as pd
-import xlsxwriter
 
-from argparse import ArgumentParser
-from csv import DictReader
-import multiprocessing
-import difflib
-import logging
-import json
-import os
-
-with open(os.path.join(os.path.dirname(__file__), 'version.py'), 'r') as version_file:
-    __version__ = version_file.readline().rstrip().split('__version__ = ')[1].replace("'", "")
-
+__version__ = metadata.version('in-silico-pcr')
 __author__ = 'adamkoziol'
 
 
@@ -808,6 +812,11 @@ class PrimerValidator:
 
 def cli():
     parser = ArgumentParser(description='Perform in silico PCR analyses to validate primer sets')
+    parser.add_argument(
+        '-v', '--version',
+        action='version',
+        version=f'%(prog)s commit {__version__}'
+    )
     parser.add_argument(
         '-i', '--inclusion_sequencepath',
         required=True,
