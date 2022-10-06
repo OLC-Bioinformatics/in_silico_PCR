@@ -8,7 +8,6 @@ from olctools.accessoryFunctions.accessoryFunctions import \
     SetupLogging
 from genemethods.assemblypipeline.primer_finder_ipcress import CustomIP, make_blastdb
 from genemethods.assemblypipeline.legacy_vtyper import Filer
-from in_silico_PCR.primer_finder.version import __version__
 
 from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio.SeqRecord import SeqRecord
@@ -24,6 +23,9 @@ import difflib
 import logging
 import json
 import os
+
+with open(os.path.join(os.path.dirname(__file__), 'version.py'), 'r') as version_file:
+    __version__ = version_file.readline().rstrip().split('__version__ = ')[1].replace("'", "")
 
 __author__ = 'adamkoziol'
 
