@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # Standard library imports
-from importlib import metadata
+from importlib import metadata as meta_data
+from argparse import ArgumentParser
 from csv import DictReader
 import multiprocessing
 import difflib
@@ -14,7 +15,6 @@ from Bio.Blast.Applications import NcbiblastnCommandline
 from Bio.SeqRecord import SeqRecord
 from Bio.Seq import Seq
 from Bio import SeqIO
-from argparse import ArgumentParser
 import pandas as pd
 import xlsxwriter
 
@@ -30,7 +30,7 @@ from genemethods.assemblypipeline.primer_finder_ipcress import \
 from genemethods.assemblypipeline.legacy_vtyper import Filer
 
 
-__version__ = metadata.version('in-silico-pcr')
+__version__ = meta_data.version('in-silico-pcr')
 __author__ = 'adamkoziol'
 
 
@@ -135,26 +135,30 @@ class PrimerValidator:
             miss_dict=self.inclusivity_miss_dict,
             group='inclusivity',
             analysis='primer',
-            report_path=self.report_path
+            report_path=self.report_path,
+            primer_dict=self.primer_dict
         )
         self.missing_report(
             miss_dict=self.exclusivity_miss_dict,
             group='exclusivity',
             analysis='primer',
-            report_path=self.report_path
+            report_path=self.report_path,
+            primer_dict=self.primer_dict
         )
         if self.probe_file:
             self.missing_report(
                 miss_dict=self.inclusivity_miss_dict,
                 group='inclusivity',
                 analysis='probe',
-                report_path=self.report_path
+                report_path=self.report_path,
+                primer_dict=self.primer_dict
             )
             self.missing_report(
                 miss_dict=self.exclusivity_miss_dict,
                 group='exclusivity',
                 analysis='probe',
-                report_path=self.report_path
+                report_path=self.report_path,
+                primer_dict=self.primer_dict
             )
         self.results = self.calculate_percentages(results_dict=self.results)
         # Print the populated results dictionary to file using json.dump()
@@ -177,18 +181,19 @@ class PrimerValidator:
         :param validator_report_path: String of the name and path of the folder into which the validator reports are
         to be written
         :return: Populated results_dict
+        :return: miss_dict: Dictionary of sequences that do not have hits for specific primers
         """
         logging.info(f'Parsing {group}')
         # Initialise a dictionary to store the names of samples that do not have hits
-        empty_results = dict()
-        if 'primer' not in empty_results:
-            empty_results['primer'] = dict()
+        miss_dict = dict()
+        if 'primer' not in miss_dict:
+            miss_dict['primer'] = dict()
         # Extract the names of all the primer sets in the analyses
         for primer in primer_dict:
             if primer not in results_dict:
                 results_dict[primer] = dict()
-            if primer not in empty_results['primer']:
-                empty_results['primer'][primer] = list()
+            if primer not in miss_dict['primer']:
+                miss_dict['primer'][primer] = list()
             # Add the inclusivity/exclusivity group to the dictionary
             if group not in results_dict[primer]:
                 results_dict[primer][group] = dict()
@@ -227,11 +232,11 @@ class PrimerValidator:
                 if sample.name not in results_dict[primer][group]:
                     results_dict[primer][group][sample.name] = dict()
                     # Add the sample name to the list of missing samples in the dictionary
-                    if sample.name not in empty_results['primer'][primer]:
-                        empty_results['primer'][primer].append(sample.name)
+                    if sample.name not in miss_dict['primer'][primer]:
+                        miss_dict['primer'][primer].append(sample.name)
                 logging.debug(f'Sample {sample.name} in panel {group}, primer set {primer} has the following outputs: '
                               f'{results_dict[primer][group][sample.name]}')
-        return results_dict, empty_results
+        return results_dict, miss_dict
 
     @staticmethod
     def write_amplicon_sequence(sample, contig_results, primer, amplicon_path, validator_report_path):
@@ -373,11 +378,11 @@ class PrimerValidator:
                     # Only process the samples that were analysed with BLAST
                     if os.path.isfile(sample[analysistype][primer].blastresults):
                         # Open blast output csv file
-                        tsvfile = open(sample[analysistype][primer].blastresults)
+                        tsv_file = open(sample[analysistype][primer].blastresults)
                         # Skip header
-                        tsvfile.readline()
+                        tsv_file.readline()
                         # Open the sequence profile file as a dictionary
-                        blastdict = DictReader(tsvfile, fieldnames=fieldnames, dialect='excel-tab')
+                        blastdict = DictReader(tsv_file, fieldnames=fieldnames, dialect='excel-tab')
                         hit_dict = dict()
                         # Go through each BLAST result
                         for row in blastdict:
@@ -471,7 +476,7 @@ class PrimerValidator:
             'ProbeSequence'
         ]
         # Create a dictionary to store the desired column widths
-        columnwidth = {
+        column_width = {
             0: 15,  # Sample
             1: 10,  # Primer
             2: 10,  # Probe
@@ -484,7 +489,7 @@ class PrimerValidator:
         # Set width of each column appropriately
         for header in headers:
             worksheet.write(row, col, header, bold)
-            worksheet.set_column(col, col, columnwidth[col])
+            worksheet.set_column(col, col, column_width[col])
             col += 1
         missing = list()
         for sample in metadata:
@@ -519,11 +524,13 @@ class PrimerValidator:
                         # do not have hits for the current primer/probe combination
                         if 'probe' not in miss_dict:
                             miss_dict['probe'] = dict()
-                        if probe not in miss_dict['probe']:
-                            miss_dict['probe'][probe] = list()
+                        if primer not in miss_dict['probe']:
+                            miss_dict['probe'][primer] = dict()
+                        if probe not in miss_dict['probe'][primer]:
+                            miss_dict['probe'][primer][probe] = list()
                         # Add the sample name to the list in the dictionary
-                        if sample.name not in miss_dict['probe'][probe]:
-                            miss_dict['probe'][probe].append(sample.name)
+                        if sample.name not in miss_dict['probe'][primer][probe]:
+                            miss_dict['probe'][primer][probe].append(sample.name)
                         # Only samples that had no hits at all will not have the probe_file attribute
                         if not GenObject.isattr(sample.probe, 'probe_file'):
                             # Add the sample name only once
@@ -564,7 +571,7 @@ class PrimerValidator:
         :return: bold: xlsxwriter.Workbook.add_format object setting font to bold, Courier New 10
         :return: courier: xlsxwriter.Workbook.add_format object setting font to regular, Courier New 10
         :return: row: Integer for the initial row to use (set to 0)
-        :return: col: Integer for the intial column to use (set to 0)
+        :return: col: Integer for the initial column to use (set to 0)
         """
         # Create a workbook to store the report. Using xlsxwriter rather than a simple csv format, as I want to be
         # able to have appropriately sized, multi-line cells
@@ -681,7 +688,7 @@ class PrimerValidator:
         return results_dict
 
     @staticmethod
-    def missing_report(miss_dict, group, analysis, report_path):
+    def missing_report(miss_dict, group, analysis, report_path, primer_dict):
         """
         Create an Excel report containing the sample names that do not have results for the current group
         (inclusivity/exclusivity) and analysis type (primer/probe)
@@ -690,6 +697,7 @@ class PrimerValidator:
         :param analysis: String of the current analysis type: primer or probe
         :param report_path: String of the name and path of the folder into which the group-specific reports are to be
         written
+        :param primer_dict: Dictionary of primer name: primer sequence
         """
         logging.info(f'Creating report for samples with no hits for {group} {analysis}')
         # Create the workbook
@@ -700,8 +708,24 @@ class PrimerValidator:
         )
         # Initialise a list to store the primers/probes in the dictionary
         headers = list()
-        for primer, sample_list in miss_dict[analysis].items():
-            headers.append(primer)
+        # Initialise a separate list to store the probe name only (rather than the primer+probe in the header)
+        probe_headers = list()
+        # If a exclusivity/inclusivity panel did not have any sequences, the dictionary will not be properly initialised
+        try:
+            if analysis == 'primer':
+                for primer, sample_list in miss_dict[analysis].items():
+                    headers.append(primer)
+            # Find the primer/probe combination
+            elif analysis == 'probe':
+                for primer in sorted(primer_dict):
+                    for probe, sample_list in sorted(miss_dict[analysis][primer].items()):
+                        probe_headers.append(probe)
+                        headers.append(f'{primer}_{probe}')
+            else:
+                logging.error(f'Analysis type {analysis} is unsupported. Something has gone wrong!')
+                raise SystemExit
+        except KeyError:
+            pass
         # Sort the headers
         headers = sorted(headers)
         # Write the primer/probe names to the header
@@ -713,15 +737,31 @@ class PrimerValidator:
         # Reset the column to 0 in order to add the data
         col = 0
         # Iterate through all the primers/probes
-        for header in headers:
-            # Reset the row number to 1 for each list of sample names
-            row = 1
-            for sample_name in miss_dict[analysis][header]:
-                # Write the sample name to the worksheet
-                worksheet.write(row, col, sample_name, courier)
-                row += 1
-            # Increase the column number for each primer/probe
-            col += 1
+        if analysis == 'primer':
+            for header in headers:
+                # Reset the row number to 1 for each list of sample names
+                row = 1
+                for sample_name in miss_dict[analysis][header]:
+                    # Write the sample name to the worksheet
+                    worksheet.write(row, col, sample_name, courier)
+                    row += 1
+                # Increase the column number for each primer/probe
+                col += 1
+        # Probes have an extra nested dictionary for the primer/probe combinations
+        elif analysis == 'probe':
+            for primer in sorted(primer_dict):
+                # Enumerate through the headers to get the index
+                for i, header in enumerate(probe_headers):
+                    # Ensure that the primer matches the name in the headers
+                    if headers[i].startswith(primer):
+                        # Reset the row number to 1 for each list of sample names
+                        row = 1
+                        for sample_name in miss_dict[analysis][primer][header]:
+                            # Write the sample name to the worksheet
+                            worksheet.write(row, col, sample_name, courier)
+                            row += 1
+                        # Increase the column number for each primer/probe
+                        col += 1
         # Close the workbook
         workbook.close()
 
