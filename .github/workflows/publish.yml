@@ -54,6 +54,9 @@ jobs:
         else
           echo "Token exists (not showing value)"
         fi
+    - name: Upload package to adamkoziol
+      run: |
+        anaconda -t ${{ secrets.ADAMKOZIOL_ANACONDA_API_TOKEN }} upload -u adamkoziol $CONDA_PKG_PATH/in_silico_pcr-*.conda
     - name: Upload package to olcbioinformatics
       run: |
         anaconda -t ${{ secrets.OLCBIOINFORMATICS_ANACONDA_API_TOKEN }} --verbose upload -u olcbioinformatics $CONDA_PKG_PATH/in_silico_pcr-*.conda
