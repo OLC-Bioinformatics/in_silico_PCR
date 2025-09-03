@@ -47,6 +47,13 @@ jobs:
       run: |
         conda install -y anaconda-client
         echo "$(conda info --base)/bin" >> $GITHUB_PATH
+    - name: Debug token
+      run: |
+        if [ -z "${{ secrets.OLCBIOINFORMATICS_ANACONDA_API_TOKEN }}" ]; then
+          echo "Token is empty"
+        else
+          echo "Token exists (not showing value)"
+        fi
     - name: Upload package to olcbioinformatics
       run: |
-        anaconda -t ${{ secrets.OLCBIOINFORMATICS_ANACONDA_API_TOKEN }} upload -u olcbioinformatics $CONDA_PKG_PATH/in_silico_pcr-*.conda
+        anaconda -t ${{ secrets.OLCBIOINFORMATICS_ANACONDA_API_TOKEN }} --verbose upload -u olcbioinformatics $CONDA_PKG_PATH/in_silico_pcr-*.conda
