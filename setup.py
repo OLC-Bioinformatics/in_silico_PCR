@@ -6,7 +6,9 @@ __author__ = 'adamkoziol'
 
 # Find the version
 version = dict()
-with open(convert_path(os.path.join('primer_finder', 'version.py')), 'r') as version_file:
+with open(
+        convert_path(os.path.join('primer_finder', 'version.py')), 'r'
+) as version_file:
     exec(version_file.read(), version)
 
 setup(

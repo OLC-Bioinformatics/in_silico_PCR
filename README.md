@@ -21,7 +21,7 @@ The longer the reads in the FASTQ file(s), the better the assembly and the fewer
 
 ## Installation
 
-`conda install -c adamkoziol in_silico_pcr`
+`conda install -c olcbioinformatics in_silico_pcr`
 
 you may need to add the bioconda channel
 
