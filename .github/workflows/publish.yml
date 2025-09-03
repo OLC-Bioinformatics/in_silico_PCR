@@ -1,0 +1,52 @@
+name: Build, Publish and Release Conda Package
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env: 
+      CONDA_PKG_PATH: /usr/share/miniconda/conda-bld/noarch
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Setup Conda
+      uses: conda-incubator/setup-miniconda@v2
+      with:
+        activate-environment: in_silico_pcr_env
+        python-version: 3.9
+        auto-activate-base: false
+        channels: olcbioinformatics,bioconda,conda-forge
+    - name: Install Conda build
+      run: conda install -y conda-build
+    - name: Install conda-verify
+      run: conda install -y conda-verify
+    - name: Set version
+      run: echo "VERSION=${{ github.event.release.tag_name }}" >> $GITHUB_ENV
+    - name: Download source code
+      run: wget https://github.com/OLC-Bioinformatics/in_silico_PCR/archive/$VERSION.tar.gz
+    - name: Calculate hash
+      run: |
+        echo "HASH=$(sha256sum $VERSION.tar.gz | awk '{ print $1 }')" >> $GITHUB_ENV
+    - name: Update meta.yaml
+      run: |
+        sed -i "s/{% set version = .*/{% set version = '${VERSION#v}' %}/g" recipes/meta.yaml
+        sed -i "s|url: .*|url: https://github.com/OLC-Bioinformatics/in_silico_PCR/archive/$VERSION.tar.gz|g" recipes/meta.yaml
+        sed -i "s/sha256: .*/sha256: $HASH/g" recipes/meta.yaml
+    - name: Build Conda package
+      run: |
+        conda build recipes/
+    - name: Upload Conda package
+      uses: actions/upload-artifact@v4
+      with:
+        name: in_silico_pcr
+        path: $CONDA_PKG_PATH/in_silico_pcr-*.conda
+    - name: Install anaconda-client
+      run: |
+        conda install -y anaconda-client
+        echo "$(conda info --base)/bin" >> $GITHUB_PATH
+    - name: Upload package to olcbioinformatics
+      run: |
+        anaconda -t ${{ secrets.OLCBIOINFORMATICS_ANACONDA_API_TOKEN }} upload -u olcbioinformatics $CONDA_PKG_PATH/in_silico_pcr-*.conda
