@@ -573,61 +573,57 @@ class PrimerValidator:
                                 if percent_id > previous_best:
                                     # Add current positives -> details
                                     hit_dict[primer][probe][percent_id] = row
-                                    # Delete previous best key
-                                    del hit_dict[primer][probe][previous_best]
-                        # Iterate through hit_dict
-                        for probe, detail_dict in hit_dict[primer].items():
-                            # Initialise the probe attribute as required
-                            if not GenObject.isattr(
-                                sample[analysistype][primer], probe
-                            ):
-                                sample[analysistype][primer][probe] = (
-                                    GenObject()
-                                )
-                            # Iterate through percent id and details in dict
-                            for percent_id, details in detail_dict.items():
-                                # Initialise the details attribute as required
-                                if not GenObject.isattr(
-                                    sample[analysistype][primer][probe],
-                                    'details',
-                                ):
-                                    primer_probe = (
-                                        sample[analysistype][primer][probe]
-                                    )
-                                    primer_probe.details = details
-                                # Add mismatch_details (e.g., 32A>T;43A>C)
-                                details['mismatch_details'] = (
-                                    PrimerValidator.return_mismatches(
+                                    # Delete the previous best positives key from the dictionary
+                                    del (hit_dict[primer][probe][previous_best])
+                        # Iterate through all the probes in the set of probes
+                        for probe in probe_dict:
+                            try:
+                                # Extract the details dictionary for the current probe
+                                detail_dict = hit_dict[primer][probe]
+                                # Initialise the probe attribute as required
+                                if not GenObject.isattr(sample[analysistype][primer], probe):
+                                    sample[analysistype][primer][probe] = GenObject()
+                                # Iterate through the percent identity and the details in detail_dict
+                                for percent_id, details in detail_dict.items():
+                                    # Initialise the details attribute as required
+                                    if not GenObject.isattr(sample[analysistype][primer][probe], 'details'):
+                                        sample[analysistype][primer][probe].details = details
+                                    # Add the mismatch_details key to the details dictionary. The mismatch details are
+                                    # a string of all the mismatches e.g. 32A>T;43A>C
+                                    details['mismatch_details'] = PrimerValidator.return_mismatches(
                                         sample=sample,
                                         primer=primer,
-                                        probe=probe,
+                                        probe=probe
                                     )
-                                )
-                                # Create details attribute
-                                primer_probe = (
-                                    sample[analysistype][primer][probe]
-                                )
-                                primer_probe.details = details
-                                # Populate details in results dict
-                                group_dict = results_dict[primer][group]
-                                if sample.name not in group_dict:
-                                    group_dict[sample.name] = dict()
-                                if (
-                                    'probe'
-                                    not in group_dict[sample.name]
-                                ):
-                                    group_dict[sample.name]['probe'] = dict()
-                                if (
-                                    probe
-                                    not in group_dict[sample.name]['probe']
-                                ):
-                                    group_dict[sample.name]['probe'][probe] = (
-                                        dict()
-                                    )
-                                # Update details in results dict
-                                group_dict[sample.name]['probe'][probe] = (
-                                    details
-                                )
+                                    # Create the details attribute as the details dictionary
+                                    sample[analysistype][primer][probe].details = details
+                                    # Populate the details dictionary with the probe information
+                                    if sample.name not in results_dict[primer][group]:
+                                        results_dict[primer][group][sample.name] = dict()
+                                    if 'probe' not in results_dict[primer][group][sample.name]:
+                                        results_dict[primer][group][sample.name]['probe'] = dict()
+                                    if probe not in results_dict[primer][group][sample.name]['probe']:
+                                        results_dict[primer][group][sample.name]['probe'][probe] = dict()
+                                    # Update results_dict with the details dictionary
+                                    results_dict[primer][group][sample.name]['probe'][probe] = details
+                            except KeyError:
+                                # Populate results_dict with default values for no probe hit
+                                if primer not in results_dict:
+                                    results_dict[primer] = dict()
+                                if group not in results_dict[primer]:
+                                    results_dict[primer][group] = dict()
+                                if sample.name not in results_dict[primer][group]:
+                                    results_dict[primer][group][sample.name] = dict()
+                                if 'probe' not in results_dict[primer][group][sample.name]:
+                                    results_dict[primer][group][sample.name]['probe'] = dict()
+                                if probe not in results_dict[primer][group][sample.name]['probe']:
+                                    results_dict[primer][group][sample.name]['probe'][probe] = {
+                                        'percent_id': 0.0,
+                                        'mismatches': None,
+                                        'mismatch_details': None,
+                                        'query_sequence': None,
+                                        'subject_sequence': None
+                                    }
                 except AttributeError:
                     pass
         return metadata
@@ -1325,8 +1321,8 @@ class PrimerValidator:
         )
         # Create the workbook
         (
-            _report_name,
-            _report,
+            _,
+            __,
             workbook,
             worksheet,
             bold,

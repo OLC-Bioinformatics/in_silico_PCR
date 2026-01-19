@@ -1,0 +1,51 @@
+{% set name = "in_silico_pcr" %}
+{% set version = "{{ version }}" %}
+
+package:
+  name: '{{ name|lower }}'
+  version: '{{ version }}'
+
+source:
+  url: '{{ url }}'
+  sha256: '{{ sha256 }}'
+
+build:
+  number: 0
+  noarch: python
+  script: python -m pip install --no-deps --ignore-installed .
+
+requirements:
+  host:
+    - python=3.9.12=h9a8a25e_1_cpython
+  run:
+    - blast=2.12.0=hf3cf87c_4
+    - exonerate=2.4.0=h09da616_5
+    - genemethods=0.0.0.60=py_0
+    - python=3.9.12=h9a8a25e_1_cpython
+    - spades=3.13.0=0
+    - validator_helper=0.0.10=py_5
+
+test:
+  imports:
+    - primer_finder
+  source_files:
+    - primer_finder/tests
+  requires:
+    - pytest
+  commands:
+    - primer_finder.py
+
+about:
+  home: https://github.com/OLC-Bioinformatics/in_silico_PCR
+  license: MIT
+  license_family: MIT
+  license_file: LICENSE
+  summary: Perform in silico PCR analyses on FASTA- and/or FASTQ-formatted files
+  description: |
+    This performs in silico PCRs from .fastq(.gz) or .fasta files using primer sequences.
+    The script uses bbduk to bait reads containing the primer sequences and assembles valid PCR products.
+  doc_url: https://github.com/OLC-Bioinformatics/in_silico_PCR
+  dev_url: https://github.com/OLC-Bioinformatics/in_silico_PCR
+
+extra:
+  recipe-maintainers: 'adamkoziol'
