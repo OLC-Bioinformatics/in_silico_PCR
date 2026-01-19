@@ -949,8 +949,7 @@ class PrimerValidator:
 
         summary = self.results or {}
 
-        # Build a mapping (PANEL, SEQID) -> primer_sets and representative
-        # seq data
+        # Build a mapping (PANEL, SEQID) -> primer_sets and per-primer seq data
         entries: Dict[Tuple[str, str], Dict[str, Any]] = {}
         for primer_set_name, primer_data in summary.items():
             if primer_set_name == 'validator_version':
@@ -965,12 +964,14 @@ class PrimerValidator:
                         continue
                     key = (panel_name.upper(), seqid)
                     ent = entries.setdefault(
-                        key, {"primer_sets": [], "seq_data": None}
+                        key, {"primer_sets": [], "per_primer": {}}
                     )
                     if primer_set_name not in ent["primer_sets"]:
                         ent["primer_sets"].append(primer_set_name)
-                    if seq_data and ent["seq_data"] is None:
-                        ent["seq_data"] = seq_data
+                    # Store the sequence data for this primer set; use None
+                    # for empty entries
+                    ent["per_primer"][primer_set_name] = \
+                        seq_data if seq_data else None
 
         # Helper to flatten summary counts for Overview sheet
         def _collect_stats_rows(node, path):
@@ -1077,150 +1078,165 @@ class PrimerValidator:
 
             for panel, seqid in sorted_keys:
                 ent = entries[(panel, seqid)]
-                primer_sets = ", ".join(sorted(ent["primer_sets"]))
-                sd = ent["seq_data"]
-                if not sd:
-                    amplicon_length = "ND"
-                    contig = "ND"
-                    location = "ND"
-                    direction = "ND"
-                    forward_mismatch = "ND"
-                    forward_mismatch_details = ""
-                    reverse_mismatch = "ND"
-                    reverse_mismatch_details = ""
-                    probe_mismatches = "ND"
-                    probe_mismatch_details = ""
-                    total_mismatch = "ND"
-                else:
-                    amplicon_length = _get_field(
-                        sd,
-                        [
-                            "amplicon_size",
-                            "AmpliconSize",
-                            "amplicon_length"
-                        ]
-                    ) or "ND"
-                    contig = _get_field(
-                        sd,
-                        [
-                            "contig",
-                            "Contig"
-                        ]
-                    ) or "ND"
-                    location = _get_field(
-                        sd,
-                        [
-                            "location",
-                            "amplicon_range",
-                            "GenomeLocation"
-                        ]
-                    ) or "ND"
-                    direction = _get_field(
-                        sd,
-                        [
-                            "orientation",
-                            "direction"
-                        ]
-                    ) or "ND"
-                    forward_mismatch = _get_field(
-                        sd,
-                        [
-                            "forward_mismatch",
-                            "ForwardMismatches"
-                        ]
-                    ) or "ND"
-                    forward_mismatch_details = _get_field(
-                        sd,
-                        [
-                            "forward_mismatch_details",
-                            "ForwardMismatchDetails"
-                        ]
-                    ) or ""
-                    reverse_mismatch = _get_field(
-                        sd,
-                        [
-                            "reverse_mismatch",
-                            "ReverseMismatches"
-                        ]
-                    ) or "ND"
-                    reverse_mismatch_details = _get_field(
-                        sd,
-                        [
-                            "reverse_mismatch_details",
-                            "ReverseMismatchDetails"
-                        ]
-                    ) or ""
+                primer_list = sorted(ent["primer_sets"])
+                # Primer sets that have seq_data (non-empty)
+                present = [p for p in primer_list if ent["per_primer"].get(p)]
 
-                    # Probe extraction (handle nested/flat forms)
-                    probe_mismatches = "ND"
-                    probe_mismatch_details = ""
-                    probe_data = sd.get(
-                        "probe"
-                    ) if isinstance(sd, dict) else None
-                    if probe_data and isinstance(probe_data, dict):
-                        # grab any probe entry
-                        try:
-                            if "probe" in probe_data and isinstance(
-                                probe_data["probe"], dict
-                            ):
-                                pinfo = probe_data["probe"]
-                            else:
-                                # first probe in dict
-                                kprobe = next(iter(probe_data.keys()))
-                                pinfo = probe_data[kprobe] if isinstance(
-                                    probe_data[kprobe], dict
-                                ) else probe_data
-                            probe_mismatches = pinfo.get(
-                                "mismatches",
-                                pinfo.get("mismatch", "ND")
-                            )
-                            probe_mismatch_details = pinfo.get(
-                                "mismatch_details", ""
-                            )
-                        except Exception:
-                            probe_mismatches = probe_data.get(
-                                "mismatches", "ND"
-                            )
-
-                    # Compute total mismatches
-                    def _parse_mismatch_value(val):
-                        if val is None:
-                            return None
-                        sval = str(val).strip()
-                        if sval == "" or sval.upper() == "ND":
-                            return None
-                        try:
-                            return int(sval)
-                        except Exception:
-                            try:
-                                return int(float(sval))
-                            except Exception:
-                                return None
-
-                    fval = _parse_mismatch_value(forward_mismatch)
-                    rval = _parse_mismatch_value(reverse_mismatch)
-                    pval = _parse_mismatch_value(probe_mismatches)
-                    if fval is None and rval is None and pval is None:
+                def _write_row_from_sd(sd, primer_cell):
+                    # sd may be a dict or None
+                    if not sd:
+                        amplicon_length = "ND"
+                        contig = "ND"
+                        location = "ND"
+                        direction = "ND"
+                        forward_mismatch = "ND"
+                        forward_mismatch_details = ""
+                        reverse_mismatch = "ND"
+                        reverse_mismatch_details = ""
+                        probe_mismatches = "ND"
+                        probe_mismatch_details = ""
                         total_mismatch = "ND"
                     else:
-                        total_mismatch = \
-                            (fval or 0) + (rval or 0) + (pval or 0)
+                        amplicon_length = _get_field(
+                            sd,
+                            [
+                                "amplicon_size",
+                                "AmpliconSize",
+                                "amplicon_length"
+                            ]
+                        ) or "ND"
+                        contig = _get_field(
+                            sd,
+                            [
+                                "contig",
+                                "Contig"
+                            ]
+                        ) or "ND"
+                        location = _get_field(
+                            sd,
+                            [
+                                "location",
+                                "amplicon_range",
+                                "GenomeLocation"
+                            ]
+                        ) or "ND"
+                        direction = _get_field(
+                            sd,
+                            [
+                                "orientation",
+                                "direction"
+                            ]
+                        ) or "ND"
+                        forward_mismatch = _get_field(
+                            sd,
+                            [
+                                "forward_mismatch",
+                                "ForwardMismatches"
+                            ]
+                        ) or "ND"
+                        forward_mismatch_details = _get_field(
+                            sd,
+                            [
+                                "forward_mismatch_details",
+                                "ForwardMismatchDetails"
+                            ]
+                        ) or ""
+                        reverse_mismatch = _get_field(
+                            sd,
+                            [
+                                "reverse_mismatch",
+                                "ReverseMismatches"
+                            ]
+                        ) or "ND"
+                        reverse_mismatch_details = _get_field(
+                            sd,
+                            [
+                                "reverse_mismatch_details",
+                                "ReverseMismatchDetails"
+                            ]
+                        ) or ""
 
-                ws0.write(write_row, 0, seqid, cell_fmt)
-                ws0.write(write_row, 1, panel, cell_fmt)
-                ws0.write(write_row, 2, primer_sets, cell_fmt)
-                ws0.write(write_row, 3, amplicon_length, cell_fmt)
-                ws0.write(write_row, 4, contig, cell_fmt)
-                ws0.write(write_row, 5, location, cell_fmt)
-                ws0.write(write_row, 6, direction, cell_fmt)
-                ws0.write(write_row, 7, forward_mismatch, cell_fmt)
-                ws0.write(write_row, 8, forward_mismatch_details, cell_fmt)
-                ws0.write(write_row, 9, reverse_mismatch, cell_fmt)
-                ws0.write(write_row, 10, reverse_mismatch_details, cell_fmt)
-                ws0.write(write_row, 11, probe_mismatches, cell_fmt)
-                ws0.write(write_row, 12, probe_mismatch_details, cell_fmt)
-                ws0.write(write_row, 13, total_mismatch, cell_fmt)
-                write_row += 1
+                        # Probe extraction (handle nested/flat forms)
+                        probe_mismatches = "ND"
+                        probe_mismatch_details = ""
+                        probe_data = sd.get(
+                            "probe"
+                        ) if isinstance(sd, dict) else None
+                        if probe_data and isinstance(probe_data, dict):
+                            try:
+                                if "probe" in probe_data and isinstance(
+                                    probe_data["probe"], dict
+                                ):
+                                    pinfo = probe_data["probe"]
+                                else:
+                                    kprobe = next(iter(probe_data.keys()))
+                                    pinfo = probe_data[kprobe] if isinstance(
+                                        probe_data[kprobe], dict
+                                    ) else probe_data
+                                probe_mismatches = pinfo.get(
+                                    "mismatches",
+                                    pinfo.get("mismatch", "ND")
+                                )
+                                probe_mismatch_details = pinfo.get(
+                                    "mismatch_details", ""
+                                )
+                            except Exception:
+                                probe_mismatches = probe_data.get(
+                                    "mismatches", "ND"
+                                )
+
+                        # Compute total mismatches
+                        def _parse_mismatch_value(val):
+                            if val is None:
+                                return None
+                            sval = str(val).strip()
+                            if sval == "" or sval.upper() == "ND":
+                                return None
+                            try:
+                                return int(sval)
+                            except Exception:
+                                try:
+                                    return int(float(sval))
+                                except Exception:
+                                    return None
+
+                        fval = _parse_mismatch_value(forward_mismatch)
+                        rval = _parse_mismatch_value(reverse_mismatch)
+                        pval = _parse_mismatch_value(probe_mismatches)
+                        if fval is None and rval is None and pval is None:
+                            total_mismatch = "ND"
+                        else:
+                            total_mismatch = \
+                                (fval or 0) + (rval or 0) + (pval or 0)
+
+                    ws0.write(write_row, 0, seqid, cell_fmt)
+                    ws0.write(write_row, 1, panel, cell_fmt)
+                    ws0.write(write_row, 2, primer_cell, cell_fmt)
+                    ws0.write(write_row, 3, amplicon_length, cell_fmt)
+                    ws0.write(write_row, 4, contig, cell_fmt)
+                    ws0.write(write_row, 5, location, cell_fmt)
+                    ws0.write(write_row, 6, direction, cell_fmt)
+                    ws0.write(write_row, 7, forward_mismatch, cell_fmt)
+                    ws0.write(write_row, 8, forward_mismatch_details, cell_fmt)
+                    ws0.write(write_row, 9, reverse_mismatch, cell_fmt)
+                    ws0.write(
+                        write_row, 10, reverse_mismatch_details, cell_fmt
+                    )
+                    ws0.write(write_row, 11, probe_mismatches, cell_fmt)
+                    ws0.write(write_row, 12, probe_mismatch_details, cell_fmt)
+                    ws0.write(write_row, 13, total_mismatch, cell_fmt)
+
+                if present:
+                    for primer_name in present:
+                        sd = ent["per_primer"][primer_name]
+                        _write_row_from_sd(sd, primer_name)
+                        write_row += 1
+                else:
+                    # No primer set had data: write grouped row with ND values
+                    primer_sets = ", ".join(primer_list)
+                    sd = None
+                    _write_row_from_sd(sd, primer_sets)
+                    write_row += 1
 
             ws0.autofilter(0, 0, max(write_row - 1, 0), len(headers0) - 1)
             ws0.freeze_panes(1, 0)
